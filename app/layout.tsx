@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Noto_Sans_JP } from "next/font/google";
 import "./globals.css";
 import { DiagnosisProvider } from "@/context/DiagnosisContext";
+import GoogleAnalytics from "@/components/GoogleAnalytics";
+import MetaPixel from "@/components/MetaPixel";
+import UtmCapture from "@/components/UtmCapture";
 
 const notoSansJP = Noto_Sans_JP({
   variable: "--font-noto-sans-jp",
@@ -19,6 +22,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="ja" className={`${notoSansJP.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
+        <GoogleAnalytics />
+        <MetaPixel />
+        <UtmCapture />
         <DiagnosisProvider>{children}</DiagnosisProvider>
       </body>
     </html>

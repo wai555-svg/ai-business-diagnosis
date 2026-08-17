@@ -10,6 +10,7 @@ import QuestionInput from "@/components/QuestionInput";
 import { QUESTIONS } from "@/lib/questions";
 import { useDiagnosis } from "@/context/DiagnosisContext";
 import type { DiagnosisAnswers } from "@/lib/types";
+import { trackEvent } from "@/lib/analytics";
 
 const DEFAULTS: Record<string, string | number> = {
   officeWorkerCount: 5,
@@ -26,6 +27,11 @@ export default function DiagnosisPage() {
   const router = useRouter();
   const { answers, setAnswer } = useDiagnosis();
   const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    trackEvent("diagnosis_start");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const total = QUESTIONS.length;
   const question = QUESTIONS[step];

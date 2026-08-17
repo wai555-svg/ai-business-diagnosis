@@ -105,6 +105,11 @@ export default function TopPage() {
       <footer className="mt-auto border-t border-slate-100 bg-white py-6">
         <Container>
           <p className="text-center text-xs text-slate-400">
+            <Link href="/privacy" className="underline">
+              プライバシーポリシー
+            </Link>
+          </p>
+          <p className="mt-2 text-center text-xs text-slate-400">
             © {new Date().getFullYear()} AI業務改善診断
           </p>
         </Container>

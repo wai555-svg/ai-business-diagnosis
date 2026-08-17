@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Container from "@/components/Container";
@@ -9,6 +9,8 @@ import PrimaryButton from "@/components/PrimaryButton";
 import { useDiagnosis } from "@/context/DiagnosisContext";
 import { calculateResult } from "@/lib/calculate";
 import type { DiagnosisAnswers } from "@/lib/types";
+import { trackEvent } from "@/lib/analytics";
+import { HOURLY_WAGE_YEN, WORK_WEEKS_PER_YEAR } from "@/lib/constants";
 
 function StarRating({ score }: { score: number }) {
   return (
@@ -50,6 +52,17 @@ export default function ResultPage() {
     };
     return calculateResult(filled);
   }, [answers]);
+
+  const trackedRef = useRef(false);
+  useEffect(() => {
+    if (!ready || trackedRef.current) return;
+    trackedRef.current = true;
+    trackEvent("diagnosis_complete", {
+      totalAnnualHours: result.totalAnnualHours,
+      totalAnnualCost: result.totalAnnualCost,
+      recommendationScore: result.recommendationScore,
+    });
+  }, [ready, result]);
 
   if (!ready) {
     return null;
@@ -113,6 +126,18 @@ export default function ResultPage() {
                 </li>
               ))}
             </ol>
+          </div>
+
+          <div className="mt-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+            <p className="text-sm font-semibold text-slate-500">この結果はどのように算出していますか？</p>
+            <p className="mt-3 text-xs leading-relaxed text-slate-500">
+              ご回答いただいた「1人あたりの週間作業時間」に、事務作業をする人数・年間稼働週数（
+              {WORK_WEEKS_PER_YEAR}週）・業務ごとのAI導入による削減率の目安・現在の生成AI活用度による補正を掛け合わせて算出しています。削減コストは削減時間に平均時給（時給
+              {HOURLY_WAGE_YEN.toLocaleString()}円換算）を掛けて算出した概算です。
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-slate-400">
+              業務内容や導入方法によって実際の効果は異なります。正確な効果は無料相談にて詳しく診断いたします。
+            </p>
           </div>
 
           <div className="mt-8 rounded-2xl border-2 border-blue-200 bg-blue-50 p-6 text-center">
