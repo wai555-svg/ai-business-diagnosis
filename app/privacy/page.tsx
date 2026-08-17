@@ -12,14 +12,14 @@ export default function PrivacyPage() {
       <div className="py-10">
         <Container>
           <h1 className="text-xl font-bold text-slate-900">プライバシーポリシー</h1>
-          <p className="mt-2 text-xs text-slate-400">最終更新日：[YYYY年MM月DD日]</p>
+          <p className="mt-2 text-xs text-slate-400">最終更新日：2026年8月18日</p>
 
           <div className="mt-6 space-y-6 text-sm leading-relaxed text-slate-600">
             <section>
               <h2 className="text-base font-bold text-slate-800">1. 事業者情報</h2>
               <p className="mt-2">
-                本サービス「AI業務改善診断」（以下「本サービス」）は、[事業者名を記入] （以下「当社」）が提供します。
-                お問い合わせ先：[連絡先メールアドレスを記入]
+                本サービス「AI業務改善診断」（以下「本サービス」）は、Sato Writing Labo（以下「当社」）が提供します。
+                お問い合わせ先：zxc552718@gmail.com
               </p>
             </section>
 
@@ -108,7 +108,7 @@ export default function PrivacyPage() {
             <section>
               <h2 className="text-base font-bold text-slate-800">8. お問い合わせ</h2>
               <p className="mt-2">
-                本ポリシーに関するお問い合わせは、[連絡先メールアドレスを記入] までお願いいたします。
+                本ポリシーに関するお問い合わせは、zxc552718@gmail.com までお願いいたします。
               </p>
             </section>
 
