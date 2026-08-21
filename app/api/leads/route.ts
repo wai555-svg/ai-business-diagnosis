@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
-import { appendLead, type DiagnosisSummary, type LeadRecord } from "@/lib/leadStorage.server";
+import { saveLead, type DiagnosisSummary } from "@/lib/leadStorage.server";
 import { sendLeadNotificationEmail, postLeadWebhook } from "@/lib/notify.server";
 import { isResendEnabled, isLeadsWebhookEnabled } from "@/lib/serverEnv";
 import type { UtmParams } from "@/lib/utm";
@@ -52,29 +51,31 @@ export async function POST(req: NextRequest) {
         }
       : null;
 
-  const lead: LeadRecord = {
-    id: randomUUID(),
-    submittedAt: new Date().toISOString(),
-    companyName,
-    name,
-    email,
-    message,
-    utm,
-    diagnosisSummary,
-  };
+  const saveResult = await saveLead({ companyName, name, email, message, utm, diagnosisSummary });
 
-  const [fileSaved, emailSent, webhookSent] = await Promise.all([
-    appendLead(lead),
-    isResendEnabled ? sendLeadNotificationEmail(lead) : Promise.resolve(false),
-    isLeadsWebhookEnabled ? postLeadWebhook(lead) : Promise.resolve(false),
-  ]);
-
-  if (!fileSaved && !emailSent && !webhookSent) {
+  if (!saveResult.ok) {
+    console.error("[api/leads] Supabaseへの保存に失敗しました:", saveResult.error);
     return NextResponse.json(
       { ok: false, message: "保存に失敗しました。お手数ですが時間をおいて再度お試しください。" },
       { status: 500 }
     );
   }
 
-  return NextResponse.json({ ok: true, savedVia: { fileSaved, emailSent, webhookSent } });
+  // 保存が成功していれば、通知の成否に関わらずユーザーには成功を返す。
+  // 通知の失敗はサーバーログにのみ記録する。
+  if (isResendEnabled) {
+    const emailSent = await sendLeadNotificationEmail(saveResult.lead);
+    if (!emailSent) {
+      console.error("[api/leads] メール通知(Resend)に失敗しました。lead id:", saveResult.lead.id);
+    }
+  }
+
+  if (isLeadsWebhookEnabled) {
+    const webhookSent = await postLeadWebhook(saveResult.lead);
+    if (!webhookSent) {
+      console.error("[api/leads] Webhook通知に失敗しました。lead id:", saveResult.lead.id);
+    }
+  }
+
+  return NextResponse.json({ ok: true });
 }

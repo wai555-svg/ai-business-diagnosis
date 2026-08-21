@@ -3,6 +3,10 @@
 // （クライアントコンポーネントから import すると秘密情報が漏れる可能性がある）。
 
 export const serverEnv = {
+  // 相談データの永続保存先（Supabase）。NEXT_PUBLIC_を付けず、サーバー側だけで使用する。
+  supabaseUrl: process.env.SUPABASE_URL ?? "",
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+
   // 相談通知メール（Resend: https://resend.com）
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   adminNotifyEmail: process.env.ADMIN_NOTIFY_EMAIL ?? "",
@@ -14,6 +18,9 @@ export const serverEnv = {
   // /admin ページの簡易パスワード保護
   adminAccessKey: process.env.ADMIN_ACCESS_KEY ?? "",
 };
+
+export const isSupabaseEnabled =
+  serverEnv.supabaseUrl.length > 0 && serverEnv.supabaseServiceRoleKey.length > 0;
 
 export const isResendEnabled =
   serverEnv.resendApiKey.length > 0 && serverEnv.adminNotifyEmail.length > 0;

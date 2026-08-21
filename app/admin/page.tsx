@@ -3,8 +3,13 @@ import { redirect } from "next/navigation";
 import Container from "@/components/Container";
 import Header from "@/components/Header";
 import AdminLogoutButton from "@/components/AdminLogoutButton";
-import { readLeads } from "@/lib/leadStorage.server";
-import { getAdminAccessKey, isResendEnabled, isLeadsWebhookEnabled } from "@/lib/serverEnv";
+import { listLeads } from "@/lib/leadStorage.server";
+import {
+  getAdminAccessKey,
+  isResendEnabled,
+  isLeadsWebhookEnabled,
+  isSupabaseEnabled,
+} from "@/lib/serverEnv";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +22,7 @@ export default async function AdminPage() {
     redirect("/admin/login");
   }
 
-  const leads = await readLeads();
+  const leads = await listLeads();
 
   return (
     <main className="flex flex-1 flex-col bg-slate-50">
@@ -29,10 +34,17 @@ export default async function AdminPage() {
             <AdminLogoutButton />
           </div>
 
+          {!isSupabaseEnabled && (
+            <p className="mt-3 rounded-xl bg-red-50 px-4 py-3 text-xs font-semibold text-red-700">
+              Supabase未設定です（SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY）。
+              相談フォームの送信内容は保存されません。
+            </p>
+          )}
+
           {!isResendEnabled && !isLeadsWebhookEnabled && (
             <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-700">
               メール通知(RESEND_API_KEY)・Webhook通知(LEADS_WEBHOOK_URL)が未設定です。
-              本番運用ではこのファイル保存だけに頼らず、いずれかの通知設定を推奨します。
+              新しい相談が入ってもリアルタイムには気づけないため、設定を推奨します。
             </p>
           )}
 

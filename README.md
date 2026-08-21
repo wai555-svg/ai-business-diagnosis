@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-[http://localhost:3000](http://localhost:3000) を開くと確認できます。**環境変数を何も設定しなくても、診断〜相談送信〜管理画面までひと通り動作します。**
+[http://localhost:3000](http://localhost:3000) を開くと確認できます。**診断〜結果表示までは環境変数なしで動作します。相談フォームの送信を保存するには Supabase の設定が必須です（3章・10章参照）。**
 
 本番ビルドの確認：
 
@@ -36,7 +36,7 @@ app/
   privacy/page.tsx     プライバシーポリシー
   admin/page.tsx       相談一覧の管理画面（パスワード保護）
   admin/login/page.tsx 管理画面ログイン
-  api/leads/route.ts   相談フォームの保存API（ファイル保存＋メール／Webhook通知）
+  api/leads/route.ts   相談フォームの保存API（Supabase保存＋メール／Webhook通知）
   api/events/route.ts  計測イベントの受信API（ローカル確認用）
   api/admin/login, logout/route.ts  管理画面の認証API
   layout.tsx           全体レイアウト（DiagnosisProvider・GA4・Meta Pixel・UTM捕捉を配置）
@@ -62,12 +62,16 @@ lib/
   calculate.ts        回答から診断結果を算出するロジック本体
   contactStorage.ts   サンクス画面表示用に、送信内容をブラウザに一時保持するヘルパー
   publicEnv.ts         クライアントに公開するGA4/Meta Pixelの環境変数（NEXT_PUBLIC_*）
-  serverEnv.ts         サーバー専用の環境変数（メール・Webhook・管理画面パスワード）
+  serverEnv.ts         サーバー専用の環境変数（Supabase・メール・Webhook・管理画面パスワード）
   utm.ts               UTMパラメータの取得・保存
   analytics.ts          diagnosis_start/diagnosis_complete/contact_submitの計測ヘルパー
-  leadStorage.server.ts 相談内容をローカルファイル(data/leads.jsonl)に保存
-  eventStorage.server.ts 計測イベントをローカルファイル(data/events.jsonl)に保存
+  supabaseAdmin.server.ts Service Role KeyでSupabaseに接続するクライアント（サーバー専用）
+  leadStorage.server.ts 相談内容をSupabaseの leads テーブルに保存・取得
+  eventStorage.server.ts 計測イベントをローカルファイル(data/events.jsonl)に保存（ローカル確認用。本番では参考情報程度）
   notify.server.ts      相談内容をメール(Resend)・Webhookで通知
+
+supabase/
+  schema.sql            leadsテーブルを作成するSQL（Supabase SQL Editorで実行する）
 ```
 
 ### 画面遷移
@@ -86,10 +90,12 @@ lib/
 
 ## 3. 環境変数
 
-`.env.example` を `.env.local` にコピーして使用します。**すべて未設定のままでもローカルでの動作確認は可能です。**
+`.env.example` を `.env.local` にコピーして使用します。**`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` 以外は未設定のままでもローカルでの動作確認は可能です。**
 
 | 変数名 | 用途 | 未設定時の挙動 |
 |---|---|---|
+| `SUPABASE_URL` | SupabaseプロジェクトのURL | 相談フォームの保存が失敗する（**実質必須**。10章参照） |
+| `SUPABASE_SERVICE_ROLE_KEY` | SupabaseのService Role Key（サーバー専用、`NEXT_PUBLIC_`を付けないこと） | 同上 |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | GA4の測定ID | GA4タグを読み込まない |
 | `NEXT_PUBLIC_META_PIXEL_ID` | Meta PixelのID | Pixelタグを読み込まない |
 | `RESEND_API_KEY` | 相談通知メール送信用（[Resend](https://resend.com)のAPIキー） | メール通知をスキップ |
@@ -100,17 +106,17 @@ lib/
 
 ## 4. 相談内容の保存としくみ
 
-無料相談フォームを送信すると `POST /api/leads` が呼ばれ、以下を並行して試みます（`lib/notify.server.ts` / `lib/leadStorage.server.ts`）。
+無料相談フォームを送信すると `POST /api/leads` が呼ばれ、次の順で処理します（`lib/leadStorage.server.ts` / `lib/notify.server.ts`）。
 
-1. **ローカルファイル保存**（`data/leads.jsonl`）：常に試みるベストエフォートのバックアップ。ただしVercel等のサーバーレス環境ではデプロイ・インスタンスをまたいで永続化されない場合があります。
-2. **メール通知**（`RESEND_API_KEY` / `ADMIN_NOTIFY_EMAIL` 設定時）：Resend経由で管理者に即座にメール通知します。
-3. **Webhook通知**（`LEADS_WEBHOOK_URL` 設定時）：Slack等へJSONをPOSTします。
+1. **Supabaseへの保存**（`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`）：唯一の永続ストレージ。`supabase/schema.sql` で作成した `leads` テーブルにINSERTします。**これが失敗した場合はエラー内容をサーバーログに出力し、ユーザーには「保存に失敗しました」と表示します（サンクス画面へは遷移しません＝嘘の完了表示をしない設計）。**
+2. **メール通知**（`RESEND_API_KEY` / `ADMIN_NOTIFY_EMAIL` 設定時）：Supabaseへの保存が成功した後にResend経由で管理者へ通知します。
+3. **Webhook通知**（`LEADS_WEBHOOK_URL` 設定時）：同じくSupabase保存成功後にSlack等へJSONをPOSTします。
 
-**3つとも失敗した場合のみ**エラーを返し、フォーム側は「送信に失敗しました」と表示してサンクス画面に遷移しません（＝ユーザーに嘘の完了表示をしない設計）。
+メール・Webhook通知は**失敗してもユーザーへの成功レスポンスには影響しません**（サーバーログにのみ記録）。Supabaseへの保存さえ成功していれば、通知が届かなくても相談データ自体は失われません。
 
-**本番でInstagram広告から集客する場合は、メール通知またはWebhook通知のいずれかを必ず設定してください。** ファイル保存だけに頼ると、サーバーレス環境では相談内容を取りこぼす可能性があります。
+**Vercel等のサーバーレス環境ではローカルファイルへの永続書き込みができないため、Supabaseの設定は実質必須です。** 未設定のまま本番公開すると、すべての相談送信が「保存に失敗しました」エラーになります（Supabaseのセットアップ手順は10章）。
 
-管理画面（`/admin`、要ログイン）では、保存済みの相談一覧（会社名・氏名・メール・相談内容・診断結果サマリー・流入元UTM）を確認できます。メール／Webhookが未設定の場合は画面上に警告が表示されます。
+管理画面（`/admin`、要ログイン）では、Supabaseに保存された相談一覧（会社名・氏名・メール・相談内容・診断結果サマリー・流入元UTM）を新しい順に確認できます。Supabase未設定の場合は画面上に赤い警告が表示されます。
 
 ## 5. 計測イベント
 
@@ -126,7 +132,7 @@ lib/
 
 - GA4（`window.gtag`。`NEXT_PUBLIC_GA_MEASUREMENT_ID`設定時のみ）
 - Meta Pixel（`window.fbq`のカスタムイベント。`NEXT_PUBLIC_META_PIXEL_ID`設定時のみ）
-- 自社API `/api/events`（`data/events.jsonl`に保存。GA4/Pixel未設定でもローカルでイベント発火を確認するための仕組み）
+- 自社API `/api/events`（`data/events.jsonl`に保存。GA4/Pixel未設定でもローカルでイベント発火を確認するための仕組み。**Vercel等ではファイル書き込みが永続化されないため、本番の計測はGA4/Meta Pixelを正として扱ってください**）
 
 ブラウザの開発者コンソールでも `[track] diagnosis_start {...}` のようにログ出力されます（開発モードのみ）。
 
@@ -168,14 +174,62 @@ lib/
 
 ## 8. 公開前に必ず確認すること
 
-- **`app/privacy/page.tsx`** 内の `[事業者名を記入]` `[連絡先メールアドレスを記入]` `[YYYY年MM月DD日]` を実際の情報に置き換えてください。
+- **`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`** を必ず設定してください（未設定だと相談フォームが全件エラーになります）。手順は10章。
+- **`app/privacy/page.tsx`** 内の事業者情報は設定済みです（Sato Writing Labo / zxc552718@gmail.com）。変更する場合はこのファイルを直接編集してください。
 - 本番環境では **`ADMIN_ACCESS_KEY`** を必ず設定してください（未設定だと `/admin` にアクセスできません＝安全側のデフォルトです）。
-- 本番での相談内容の取りこぼしを防ぐため、**`RESEND_API_KEY`+`ADMIN_NOTIFY_EMAIL`** または **`LEADS_WEBHOOK_URL`** のいずれかを設定してください。
+- 新しい相談にすぐ気づけるよう、**`RESEND_API_KEY`+`ADMIN_NOTIFY_EMAIL`** または **`LEADS_WEBHOOK_URL`** の設定を推奨します（必須ではありません。未設定でも相談データ自体はSupabaseに保存されます）。
 - Resendを使う場合、`LEAD_NOTIFY_FROM_EMAIL` は検証済みドメインのアドレスにする必要があります（詳細はResendのドキュメント参照）。
 
-## 9. 今後追加するとよさそうな機能
+## 10. Supabaseのセットアップ手順（初心者向け）
 
-- 相談内容・診断結果をデータベース（Supabase等）に保存し、より本格的な管理画面（検索・ステータス管理）を用意する
+相談フォームを本番で使うために、あなたご自身でSupabase側の設定を行う必要があります。以下の順に進めてください。
+
+### 手順1：Supabaseアカウント作成・プロジェクト作成
+
+1. [https://supabase.com](https://supabase.com) にアクセスし、「Start your project」からアカウントを作成（GitHubアカウントでのログインが簡単です）。
+2. ログイン後、「New project」をクリック。
+3. 以下を入力してプロジェクトを作成します。
+   - **Name**：任意（例：`ai-business-diagnosis`）
+   - **Database Password**：任意の強いパスワード（後で使わないのでメモは任意）
+   - **Region**：日本に近いリージョン（例：`Northeast Asia (Tokyo)`）を推奨
+4. 「Create new project」をクリックし、数十秒〜数分待ちます（プロジェクトが起動するまで）。
+
+### 手順2：テーブルを作成する
+
+1. 左メニューの **SQL Editor** を開く。
+2. 「New query」をクリックし、このリポジトリの [`supabase/schema.sql`](supabase/schema.sql) の中身を全部コピーして貼り付ける。
+3. 右下（または右上）の **Run** ボタンをクリックして実行する。
+4. 左メニューの **Table Editor** を開き、`leads` というテーブルが作成されていれば成功です。
+
+### 手順3：接続情報（URLとキー）を取得する
+
+1. 左メニューの歯車アイコン（**Project Settings**）→ **API** を開く。
+2. 以下の2つをコピーします。
+   - **Project URL**（例：`https://xxxxxxxxxxxx.supabase.co`）→ `SUPABASE_URL` に使う
+   - **service_role** キー（**anon / public** キーではなく、必ず **service_role** の方）→ `SUPABASE_SERVICE_ROLE_KEY` に使う
+
+   ⚠️ **service_roleキーは強力な管理者権限を持つ秘密情報です。** GitHubにコミットしたり、他人に共有したり、`NEXT_PUBLIC_` を付けて使ったりしないでください。Vercelの環境変数にのみ設定します。
+
+### 手順4：Vercelに環境変数を設定する
+
+1. Vercelのプロジェクトダッシュボード → **Settings** → **Environment Variables** を開く。
+2. 以下を追加し、**Save** する。
+   - `SUPABASE_URL` = 手順3でコピーしたProject URL
+   - `SUPABASE_SERVICE_ROLE_KEY` = 手順3でコピーしたservice_roleキー
+   - （推奨）`ADMIN_ACCESS_KEY` = 管理画面用の好きなパスワード
+   - （推奨）`RESEND_API_KEY` / `ADMIN_NOTIFY_EMAIL` = 相談があった時にメールで通知を受け取りたい場合
+3. 環境変数を追加したら、**Deployments** タブから最新のデプロイの「Redeploy」を実行してください（環境変数は再デプロイしないと反映されません）。
+
+### 手順5：動作確認
+
+1. 本番URLで無料相談フォームから実際に送信してみる。
+2. 「無料相談のお申し込みありがとうございます」画面が出れば成功です。
+3. Supabaseの **Table Editor** → `leads` テーブルを開き、送信したデータが増えていれば保存できています。
+4. 本番URLの `/admin` にアクセスし、手順4で設定した `ADMIN_ACCESS_KEY` でログインして、同じ内容が一覧表示されることを確認してください。
+
+## 11. 今後追加するとよさそうな機能
+
+- 管理画面の検索・ステータス管理（対応済み／未対応など）
 - 無料相談フォームのCRM連携（HubSpot等）
 - 診断ロジックの精緻化（業種別の削減率、実績データに基づくベンチマークなど）
 - 診断結果ページのシェア機能（SNSシェア、PDF/画像でのダウンロード）
