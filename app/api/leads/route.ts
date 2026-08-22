@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { saveLead, type DiagnosisSummary } from "@/lib/leadStorage.server";
+import { saveLead, updateLeadNotificationResult, type DiagnosisSummary } from "@/lib/leadStorage.server";
 import { sendLeadNotificationEmail, postLeadWebhook } from "@/lib/notify.server";
-import { isResendEnabled, isLeadsWebhookEnabled } from "@/lib/serverEnv";
+import { isLeadsWebhookEnabled } from "@/lib/serverEnv";
 import type { UtmParams } from "@/lib/utm";
 
 const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
@@ -62,12 +62,22 @@ export async function POST(req: NextRequest) {
   }
 
   // 保存が成功していれば、通知の成否に関わらずユーザーには成功を返す。
-  // 通知の失敗はサーバーログにのみ記録する。
-  if (isResendEnabled) {
-    const emailSent = await sendLeadNotificationEmail(saveResult.lead);
-    if (!emailSent) {
-      console.error("[api/leads] メール通知(Resend)に失敗しました。lead id:", saveResult.lead.id);
-    }
+  // 通知の成否は notification_status / notification_error としてleadsテーブルへ記録し、
+  // 失敗時の詳細（秘密情報を含まない範囲）はサーバーログにも出す。
+  const notifyResult = await sendLeadNotificationEmail(saveResult.lead);
+  if (notifyResult.ok) {
+    await updateLeadNotificationResult(saveResult.lead.id, { status: "sent" });
+  } else {
+    console.error(
+      "[api/leads] メール通知(Resend)に失敗しました。lead id:",
+      saveResult.lead.id,
+      "reason:",
+      notifyResult.error
+    );
+    await updateLeadNotificationResult(saveResult.lead.id, {
+      status: "failed",
+      error: notifyResult.error,
+    });
   }
 
   if (isLeadsWebhookEnabled) {

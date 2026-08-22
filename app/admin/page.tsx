@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import Container from "@/components/Container";
 import Header from "@/components/Header";
 import AdminLogoutButton from "@/components/AdminLogoutButton";
+import TestNotificationButton from "@/components/TestNotificationButton";
 import { listLeads } from "@/lib/leadStorage.server";
 import {
   getAdminAccessKey,
@@ -31,7 +32,10 @@ export default async function AdminPage() {
         <Container>
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-bold text-slate-900">無料相談一覧</h1>
-            <AdminLogoutButton />
+            <div className="flex items-center gap-4">
+              <TestNotificationButton />
+              <AdminLogoutButton />
+            </div>
           </div>
 
           {!isSupabaseEnabled && (
@@ -68,6 +72,27 @@ export default async function AdminPage() {
                 <p className="mt-1 text-sm text-slate-600">
                   {lead.name} ／ {lead.email}
                 </p>
+
+                <div className="mt-2">
+                  {lead.notificationStatus === "sent" && (
+                    <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
+                      通知メール: 送信済み
+                    </span>
+                  )}
+                  {lead.notificationStatus === "failed" && (
+                    <span
+                      className="rounded-full bg-red-50 px-2 py-1 text-[10px] font-bold text-red-700"
+                      title={lead.notificationError ?? undefined}
+                    >
+                      通知メール: 送信失敗{lead.notificationError ? `（${lead.notificationError}）` : ""}
+                    </span>
+                  )}
+                  {!lead.notificationStatus && (
+                    <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-400">
+                      通知メール: 未送信
+                    </span>
+                  )}
+                </div>
                 {lead.message && (
                   <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
                     {lead.message}

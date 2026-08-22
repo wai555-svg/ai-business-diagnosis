@@ -17,9 +17,13 @@ export interface LeadInput {
   diagnosisSummary: DiagnosisSummary | null;
 }
 
+export type NotificationStatus = "sent" | "failed" | null;
+
 export interface LeadRecord extends LeadInput {
   id: string;
   submittedAt: string;
+  notificationStatus: NotificationStatus;
+  notificationError: string | null;
 }
 
 type LeadRow = {
@@ -38,6 +42,8 @@ type LeadRow = {
   utm_campaign: string | null;
   utm_content: string | null;
   utm_term: string | null;
+  notification_status: string | null;
+  notification_error: string | null;
 };
 
 function rowToLead(row: LeadRow): LeadRecord {
@@ -65,6 +71,8 @@ function rowToLead(row: LeadRow): LeadRecord {
           topTasks: row.top_tasks ?? [],
         }
       : null,
+    notificationStatus: (row.notification_status as NotificationStatus) ?? null,
+    notificationError: row.notification_error ?? null,
   };
 }
 
@@ -109,6 +117,30 @@ export async function saveLead(input: LeadInput): Promise<SaveLeadResult> {
   }
 
   return { ok: true, lead: rowToLead(data as LeadRow) };
+}
+
+/**
+ * 通知メール送信の成否をleadsテーブルへ書き戻す。
+ * notification_error には秘密情報を含まない範囲のエラー概要のみを保存すること。
+ */
+export async function updateLeadNotificationResult(
+  id: string,
+  result: { status: "sent" | "failed"; error?: string | null }
+): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return;
+
+  const { error } = await supabase
+    .from("leads")
+    .update({
+      notification_status: result.status,
+      notification_error: result.status === "sent" ? null : result.error ?? null,
+    })
+    .eq("id", id);
+
+  if (error) {
+    console.error("[leads] notification_status の更新に失敗しました:", error.message);
+  }
 }
 
 /**

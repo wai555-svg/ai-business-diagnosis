@@ -23,10 +23,19 @@ create table if not exists public.leads (
   utm_medium text,
   utm_campaign text,
   utm_content text,
-  utm_term text
+  utm_term text,
+
+  -- 管理者への通知メール送信結果（'sent' | 'failed' | null=未試行）
+  notification_status text,
+  notification_error text
 );
 
 create index if not exists leads_created_at_idx on public.leads (created_at desc);
+
+-- 既存のテーブルに対して安全に追記実行できるよう、ALTER TABLEでも定義しておく
+-- （create table if not exists は既存テーブルのカラム追加は行わないため）。
+alter table public.leads add column if not exists notification_status text;
+alter table public.leads add column if not exists notification_error text;
 
 -- Row Level Securityを有効化し、ポリシーは一切追加しない。
 -- これにより anon / authenticated キー経由のアクセスはすべて拒否され、
